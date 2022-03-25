@@ -1,0 +1,77 @@
+---
+title: "Trauma cranico - CT HIT"
+author: "UBEP"
+date: "23/3/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(here)
+library(lubridate)
+library(skimr)
+library(gtsummary)
+
+
+```
+
+
+
+```{r, include=FALSE}
+
+
+dati <- read_csv(here("data_raw",
+                      "CorrectTimingOfHeadI_DATA_2022-03-23_1244.csv"))
+
+data_clean <- dati %>% 
+  mutate(
+    eta=interval(
+      data_di_nascita, data_trauma) %/% years(1),
+    tc_cat=if_else(
+      esito_tc___2==1|   ## con questa dicotomica individuo pazienti con 
+      esito_tc___2==1|   ## qualsiasi tipo di emorragia ( 1) vs no (0)
+      esito_tc___6==1,
+      1, 0
+    ),
+    sesso=as.factor(sesso)
+  ) %>% 
+  mutate(
+    across(c(
+      dinamica_del_trauma:motivo_terapia_anticoagula___4
+    ), as.factor)
+
+)
+
+not_all_na <- function(x) any(!is.na(x))
+pazienti_unici <- data_clean %>% ## credo db di pazienti unici, applico f
+  filter(!is.na(sesso)) %>%      ## per trattenere var dove not_all_NA
+  select(where(not_all_na))
+```
+
+## Anagrafica dei pazienti
+
+Di seguito vengono presentate le caratteristiche dei pazienti del dataset
+
+```{r, include=FALSE }
+pazienti_unici %>% 
+  select(eta, sesso, dinamica_del_trauma, coinvolgimento_altri_distr,
+         demenza, intossicazione, terapia_anti___1, terapia_anti___2,
+         terapia_anti___3, terapia_anticoagulante, terapia_antiaggregante___1,
+         terapia_antiaggregante___3, terapia_antiaggregante___4,
+         terapia_antiaggregante___5, terapia_antiaggregante___6,
+         terapia_antiaggregante___7, terapia_antiaggregante___8,
+         motivo_terapia_anticoagula___1, motivo_terapia_anticoagula___2,
+         motivo_terapia_anticoagula___3, motivo_terapia_anticoagula___4) %>% 
+  tbl_summary(missing="no") %>%
+  add_n() %>% 
+  bold_labels()
+
+pazienti_unici %>% 
+  filter(terapia_anti___1==1) %>% 
+  select(
+         motivo_terapia_anticoagula___1, motivo_terapia_anticoagula___2,
+         motivo_terapia_anticoagula___3, motivo_terapia_anticoagula___4) %>% 
+  tbl_summary() %>% 
+  bold_labels()
+```

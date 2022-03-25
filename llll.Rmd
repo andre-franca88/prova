@@ -1,0 +1,24 @@
+---
+title: "Untitled"
+author: "UBEP"
+date: "24/3/2022"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+ 
+|            |overall|tc-    |tc+    | 
+|------------|-------|---    |---    |
+|n.reingressi|44     |40/1361|  |4/81|
+|            |(3.2%) |       |       |
+
+
+| Syntax      | Description |
+| ----------- | ----------- |
+| Header      | Title       |
+| Paragraph   | Text        |

@@ -1,0 +1,234 @@
+---
+title: "Trauma cranico - CT HIT"
+author: "UBEP"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    theme: readable
+    highlight: espresso
+    df_print: paged
+---
+<img src = 'logo_ubesp.jpg' align='right' height='120' />
+
+```{r setup, include=FALSE} 
+library(knitr)
+opts_chunk$set(comment = '')
+opts_chunk$set(echo = FALSE)
+opts_chunk$set(warning = FALSE)
+opts_chunk$set(message = FALSE)
+library(tidyverse)
+library(here)
+library(lubridate)
+library(skimr)
+library(gtsummary)
+
+
+```
+
+
+
+```{r, include=FALSE}
+
+library(haven)
+dati <- read_dta("dati.dta")
+data_clean <- dati %>% 
+ mutate(
+    eta=interval(
+      data_di_nascita, data_trauma) %/% years(1),
+    tc_cat=if_else(
+      esito_tc___2==1|   ## con questa dicotomica individuo pazienti con 
+      esito_tc___3==1|   ## qualsiasi tipo di emorragia ( 1) vs no (0)
+      esito_tc___6==1|
+      esito_tc___7==1,
+      1, 0
+    ),
+    sesso=as.factor(sesso)
+  ) %>% 
+  mutate(
+    across(c(
+      dinamica_del_trauma:motivo_terapia_anticoagula___4
+    ), as.factor)
+
+)
+    
+
+data_clean$sesso <- factor(data_clean$sesso, labels = c("M", "F"))
+data_clean$dinamica_del_trauma <- factor(data_clean$dinamica_del_trauma, labels = c("Malore", "Caduta accidentale","Incidente stradale a dinamica minore","Incidente stradale a dinamica maggiore","Trauma contusivo diretto al capo","Non testimoniata"))
+data_clean$demenza <- factor(data_clean$demenza, labels = c("Si", "No","non noto"))
+data_clean$terapia_anticoagulante <- factor(data_clean$terapia_anticoagulante, labels = c("Dicumarolici", "Apixaban","Rivaroxaban","Dabigatran","Edoxaban","Enoxaparina","Fondaparinux","Non noto"))
+
+data_clean$terapia_antiaggregante_anticoagulante[data_clean$terapia_anti___1==1] <- "Terapia anticoagulante"
+data_clean$terapia_antiaggregante_anticoagulante[data_clean$terapia_anti___2==1] <- "Terapia antiaggregante"
+data_clean$terapia_antiaggregante_anticoagulante[data_clean$terapia_anti___1==1 & data_clean$terapia_anti___2==1] <- "Entrambe"
+data_clean$terapia_antiaggregante_anticoagulante[data_clean$terapia_anti___3==1] <- "Nessuna"
+not_all_na <- function(x) any(!is.na(x))
+pazienti_unici <- data_clean %>% ## credo db di pazienti unici, applico f
+  filter(!is.na(sesso)) %>%      ## per trattenere var dove not_all_NA
+  select(where(not_all_na))
+
+
+tc_successive <- data_clean %>% 
+  filter(is.na(sesso) & redcap_repeat_instance==1) %>% 
+  select(where(not_all_na))
+
+## converto il dataset contenente le info SOLO sulle schede ripetibili TC
+## da formato long a formato wide
+
+
+tc_wide<-pivot_wider(tc_successive, 
+               id_cols = study_id,
+               names_from = redcap_repeat_instance,
+               values_from = c(nuovi_sintomi_paziente___1:tc_cat))
+
+## faccio un merge tra il dataset contentente tutte le TC e il dataset 
+## contentente le info anagrafica / anamnesi
+
+db_join <- left_join(pazienti_unici, tc_wide, by="study_id")
+  
+db_join2 <- db_join %>% 
+  filter(study_id!="665") %>% 
+  mutate(sintomi_nuovi=
+           ifelse(sintomi_o_segni___1==1 & nuovi_sintomi_paziente___1_1!=1,1,0))
+```
+
+- Patients enrolled: `r length(unique(data_clean$study_id))`
+
+## Plot{.tabset .tabset-pills}
+
+### Distribuzione per anno{.tabset .tabset-pills}
+```{r}
+pazienti_unici$data_arrivo_in_ps<-format(as.Date(pazienti_unici$data_arrivo_in_ps), "%Y/%m/%d")
+pazienti_unici$anno_arrivo_in_ps<-format(as.Date(pazienti_unici$data_arrivo_in_ps), "%Y")
+pazienti_unici %>%
+    ggplot(aes(x = anno_arrivo_in_ps)) +
+   geom_bar( fill="steelblue")+
+  theme_minimal()
+```
+
+### Distribuzione per età{.tabset .tabset-pills}
+
+```{r}
+
+pazienti_unici %>%
+ggplot( aes(eta)) + 
+  geom_histogram(fill="steelblue") +
+  theme_minimal()+
+  scale_x_continuous(breaks=c(20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105)) 
+```
+
+
+## Descrittive {.tabset .tabset-pills}
+
+
+Di seguito vengono presentate le caratteristiche dei pazienti. I pazienti individuati
+come positivi sono solo i pazienti emorragici, definiti come pazienti la cui TC abbia
+dato uno o più dei seguenti esiti:
+
+- Emorragia subaracnoidea
+- Emorragia subdurale
+- Emorragia extradurale
+- Inondamento ventricolare
+
+### Anagrafica {.tabset .tabset-pills}
+
+```{r}
+pazienti_unici %>% 
+  select(eta, sesso ) %>% 
+  tbl_summary(missing = "no") %>%
+  add_n() %>% 
+  bold_labels()
+```
+### Anamnesi {.tabset .tabset-pills}
+```{r}
+pazienti_unici %>% 
+  select(dinamica_del_trauma, coinvolgimento_altri_distr,
+demenza, intossicazione, terapia_anti___1, terapia_anti___2,
+terapia_anti___3,terapia_antiaggregante_anticoagulante, terapia_anticoagulante, terapia_antiaggregante___1,
+terapia_antiaggregante___3, terapia_antiaggregante___4,
+terapia_antiaggregante___5, terapia_antiaggregante___6,
+terapia_antiaggregante___7, terapia_antiaggregante___8 ) %>% 
+  tbl_summary(missing = "no") %>%
+  add_n() %>% 
+  bold_labels()
+```
+
+### Motivo terapia anticoagulante {.tabset .tabset-pills}
+
+
+```{r}
+pazienti_unici %>% 
+  filter(terapia_anti___1 == 1) %>% 
+  select(
+         motivo_terapia_anticoagula___1, motivo_terapia_anticoagula___2,
+         motivo_terapia_anticoagula___3, motivo_terapia_anticoagula___4) %>% 
+  tbl_summary() %>% 
+  bold_labels()
+```
+### tc {.tabset .tabset-pills}
+```{r}
+
+pazienti_unici$presa_in_carico <- as.POSIXct(paste(pazienti_unici$data_presa_in_carico,pazienti_unici$orario_presa_in_carico), format = "%Y-%m-%d %H:%M")
+pazienti_unici$accesso_ps <- as.POSIXct(paste(pazienti_unici$data_arrivo_in_ps,pazienti_unici$orario_arrivo_in_ps), format = "%Y/%m/%d %H:%M")
+pazienti_unici$uscita_ps <- as.POSIXct(paste(pazienti_unici$data_uscita_ps,pazienti_unici$orario_uscita_ps), format = "%Y-%m-%d %H:%M")
+pazienti_unici$tempo_in_ps <- as.double(pazienti_unici$uscita_ps - pazienti_unici$accesso_ps, units = "hours")
+orari <- pazienti_unici %>% select(accesso_ps,tempo_in_ps,presa_in_carico)
+prima_tac <- data_clean %>% filter(redcap_repeat_instance == 1)
+prima_tac <- cbind(prima_tac,orari)
+prima_tac$tac <- as.POSIXct(paste(prima_tac$data_esecuzione_tc,prima_tac$orario_esecuzione_tc), format = "%Y-%m-%d %H:%M")
+prima_tac$diff_accesso_prima_tac <- as.double(prima_tac$tac - pazienti_unici$accesso_ps, units = "hours")
+prima_tac$diff_presa_in_carico_prima_tac<-as.double(prima_tac$tac - pazienti_unici$presa_in_carico, units = "hours")
+
+prima_tac <- prima_tac %>% dplyr::mutate(
+      tac_positiva = factor(
+        dplyr::case_when(
+          .data[["esito_tc___1"]]==1 ~ "Negativa",
+          .data[["esito_tc___2"]]==1|.data[["esito_tc___3"]]==1|.data[["esito_tc___4"]]==1|.data[["esito_tc___5"]]==1|.data[["esito_tc___6"]]==1|.data[["esito_tc___7"]]==1 ~ "Positiva",
+         .data[["esito_tc___8"]]==1  ~ "Invariata",
+          TRUE ~ "[missing]"
+        )))
+
+prima_tac <- prima_tac %>% dplyr::mutate(
+      tac_positiva_sang = factor(
+        dplyr::case_when(
+          .data[["esito_tc___1"]]==1 ~ "Negativa",
+          .data[["esito_tc___2"]]==1|.data[["esito_tc___3"]]==1|.data[["esito_tc___6"]]==1|.data[["esito_tc___7"]]==1 ~ "Positiva per Emorragia",
+           .data[["esito_tc___4"]]==1|.data[["esito_tc___5"]]==1~ "Positiva non per Emorragia",
+         .data[["esito_tc___8"]]==1  ~ "Invariata",
+          TRUE ~ "[missing]"
+        )))
+
+prima_tac %>% 
+  select(tac_positiva,tac_positiva_sang,diff_accesso_prima_tac,diff_presa_in_carico_prima_tac,tempo_in_ps
+ ) %>% 
+  tbl_summary(missing = "no") %>%
+  add_n() %>% 
+  bold_labels()
+```
+
+### Esito {.tabset .tabset-pills}
+```{r}
+
+pazienti_unici$esito_accesso <- factor(pazienti_unici$esito_accesso, labels = c("Dimissione", "Ricovero in reparto ordinario per traumatismo intracranico","Ricovero in reparto ordinario per motivo diverso dal traumatismo intracranico","Ricovero in TI per traumatismo intracranico","Ricovero in TI per motivo diverso dal traumatismo intracranico"))
+pazienti_unici$follow_up <- factor(pazienti_unici$follow_up, labels = c("Vivo", "Deceduto","Perso"))
+pazienti_unici$invio_in_nch <- factor(pazienti_unici$invio_in_nch, labels = c("direttamente da PS", "da reparto in regime di ricovero","dopo dimissione dal PS"))
+pazienti_unici$decesso <- factor(pazienti_unici$invio_in_nch, labels = c("Sì per causa correlata al trauma intracranico", "Sì per causa non correlata al trauma intracranico","Sì, nessuna informazione sulla causa"))
+pazienti_unici %>% 
+  select(esito_accesso, follow_up,
+	reingresso_ps, eseguita_tc_al_reingresso, tc_positiva_reingresso, intervento_nch,invio_in_nch,decesso)%>%   tbl_summary(missing = "no") %>%
+  add_n() %>% 
+  bold_labels()
+
+```
+
+### Altre variabili {.tabset .tabset-pills}
+```{r}
+db_join2  %>%
+  select(sintomi_nuovi) %>% 
+  tbl_summary(missing = "no") %>% 
+  bold_labels()
+```
+
+
+
+
+
